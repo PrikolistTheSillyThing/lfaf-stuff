@@ -17,6 +17,8 @@ class Grammar {
     void convertToCNF() {
         removeEpsilon();
         removeUnit();
+        removeInaccessible();
+        removeNonProductive();
         convertTerminals();
         breakLong();
     }
@@ -105,7 +107,9 @@ class Grammar {
         Map<String, String> map = new HashMap<>();
         int id = 0;
 
-        for (String A : rules.keySet()) {
+        List<String> keys = new ArrayList<>(rules.keySet()); // ✅ FIX
+
+        for (String A : keys) {
             for (List<String> r : rules.get(A)) {
                 if (r.size() >= 2) {
                     for (int i = 0; i < r.size(); i++) {
@@ -163,19 +167,84 @@ class Grammar {
         rules = newRules;
     }
 
+    void removeInaccessible() {
+        Set<String> reachable = new HashSet<>();
+        Queue<String> q = new LinkedList<>();
+
+        q.add(start);
+        reachable.add(start);
+
+        while (!q.isEmpty()) {
+            String cur = q.poll();
+
+            for (List<String> r : rules.getOrDefault(cur, new ArrayList<>())) {
+                for (String s : r) {
+                    if (nonTerminals.contains(s) && !reachable.contains(s)) {
+                        reachable.add(s);
+                        q.add(s);
+                    }
+                }
+            }
+        }
+
+        rules.keySet().removeIf(A -> !reachable.contains(A));
+        nonTerminals.retainAll(reachable);
+    }
+
+    void removeNonProductive() {
+        Set<String> productive = new HashSet<>();
+
+        boolean changed;
+        do {
+            changed = false;
+
+            for (String A : rules.keySet()) {
+                for (List<String> r : rules.get(A)) {
+                    boolean ok = true;
+
+                    for (String s : r) {
+                        if (nonTerminals.contains(s) && !productive.contains(s)) {
+                            ok = false;
+                            break;
+                        }
+                    }
+
+                    if (ok) {
+                        if (!productive.contains(A)) {
+                            productive.add(A);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        } while (changed);
+
+        rules.keySet().removeIf(A -> !productive.contains(A));
+        nonTerminals.retainAll(productive);
+    }
+
     static void main(String[] args) {
         Grammar g = new Grammar();
 
         g.start = "S";
 
-        g.nonTerminals.addAll(Arrays.asList("S", "A", "B"));
+        g.nonTerminals.addAll(Arrays.asList("S", "A", "B", "C", "D"));
         g.terminals.addAll(Arrays.asList("a", "b"));
 
-        g.addRule("S", Arrays.asList("A", "B"));
-        g.addRule("S", Arrays.asList("b"));
+        g.addRule("S", Arrays.asList("a", "B"));
+        g.addRule("S", Arrays.asList("D", "A"));
+
         g.addRule("A", Arrays.asList("a"));
-        g.addRule("A", new ArrayList<>()); // epsilon
+        g.addRule("A", Arrays.asList("B", "D"));
+        g.addRule("A", Arrays.asList("a", "D", "A", "D", "B"));
+
         g.addRule("B", Arrays.asList("b"));
+        g.addRule("B", Arrays.asList("A", "S", "B"));
+
+        g.addRule("D", new ArrayList<>()); // epsilon
+        g.addRule("D", Arrays.asList("B", "A"));
+
+        g.addRule("C", Arrays.asList("B", "A"));
 
         g.convertToCNF();
 
