@@ -90,14 +90,15 @@ class HtmlLexer {
     }
 
     List<Token> tokenize() {
-
         List<Token> tokens = new ArrayList<>();
+        boolean insideTag = false;   // <-- track context
 
         while (current != '\0') {
 
             if (current == '<') {
                 tokens.add(new Token(TokenType.TAG_OPEN, "<"));
                 advance();
+                insideTag = true;    // <-- now inside
 
                 if (current == '/') {
                     tokens.add(new Token(TokenType.TAG_SLASH, "/"));
@@ -111,6 +112,7 @@ class HtmlLexer {
             else if (current == '>') {
                 tokens.add(new Token(TokenType.TAG_CLOSE, ">"));
                 advance();
+                insideTag = false;   // <-- now outside
             }
 
             else if (current == '=') {
@@ -122,7 +124,7 @@ class HtmlLexer {
                 tokens.add(new Token(TokenType.STRING, readString()));
             }
 
-            else if (Character.isLetter(current)) {
+            else if (insideTag && Character.isLetter(current)) {   // <-- guard added
                 String attr = readWord();
                 tokens.add(new Token(TokenType.ATTRIBUTE_NAME, attr));
             }
@@ -142,6 +144,102 @@ class HtmlLexer {
     }
 }
 
+class Node {
+    String tagName;
+    Map<String, String> attributes = new HashMap<>();
+    List<Node> children = new ArrayList<>();
+    String text;
+
+    Node(String tagName) {
+        this.tagName = tagName;
+    }
+
+    void print(int indent) {
+        String pad = "  ".repeat(indent);
+        System.out.println(pad + "<" + tagName + "> " + attributes);
+        if (text != null)
+            System.out.println(pad + "  text: \"" + text + "\"");
+        for (Node child : children)
+            child.print(indent + 1);
+    }
+}
+
+class HtmlParser {
+
+    private List<Token> tokens;
+    private int pos;
+
+    HtmlParser(List<Token> tokens) {
+        this.tokens = tokens;
+        pos = 0;
+    }
+
+    private Token current() {
+        if (pos >= tokens.size())
+            return null;
+        return tokens.get(pos);
+    }
+
+    private void advance() {
+        pos++;
+    }
+
+
+    Node parse() {
+        return parseElement();
+    }
+
+    private Node parseElement() {
+
+        expect(TokenType.TAG_OPEN);
+
+        String tagName = expect(TokenType.TAG_NAME).value;
+
+        Node node = new Node(tagName);
+
+        while (current().type == TokenType.ATTRIBUTE_NAME) {
+            String attrName = expect(TokenType.ATTRIBUTE_NAME).value;
+            expect(TokenType.EQUALS);
+            String attrValue = expect(TokenType.STRING).value;
+            node.attributes.put(attrName, attrValue);
+        }
+
+        expect(TokenType.TAG_CLOSE);
+
+        while (current() != null && !(current().type == TokenType.TAG_OPEN &&
+                peekNext().type == TokenType.TAG_SLASH)) {
+
+            if (current().type == TokenType.TEXT) {
+                node.text = expect(TokenType.TEXT).value;
+            } else {
+                node.children.add(parseElement());
+            }
+        }
+
+        expect(TokenType.TAG_OPEN);
+        expect(TokenType.TAG_SLASH);
+        expect(TokenType.TAG_NAME);
+        expect(TokenType.TAG_CLOSE);
+
+        return node;
+    }
+    private Token expect(TokenType type) {
+        Token t = current();
+
+        if (t == null || t.type != type)
+            throw new RuntimeException("Expected " + type + " but got " + t);
+
+        advance();
+        return t;
+    }
+
+    private Token peekNext() {
+        if (pos + 1 >= tokens.size())
+            return null;
+        return tokens.get(pos + 1);
+    }
+}
+
 public class Main {
 
     public static void main(String[] args) {
@@ -154,5 +252,11 @@ public class Main {
 
         for (Token t : tokens)
             System.out.println(t);
+
+        System.out.println();
+
+        HtmlParser parser = new HtmlParser(tokens);
+        Node root = parser.parse();
+        root.print(0);
     }
 }
